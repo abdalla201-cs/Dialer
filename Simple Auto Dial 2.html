@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Auto Dialer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background: #0f172a;
+            color: #e2e8f0;
+            min-height: 100vh;
+            padding: 10px; 
+        }
+
+        .container {
+            width: 100%;
+            max-width: 800px;
+            margin: 0 auto;
+            background: #1e293b;
+            padding: 15px; 
+            border-radius: 12px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.5);
+            position: relative;
+        }
+
+        h1 {
+            text-align: center;
+            color: #38bdf8;
+            font-size: 1.4rem;
+            margin-bottom: 15px;
+        }
+
+        .input-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: bold;
+            color: #94a3b8;
+            font-size: 0.9rem;
+        }
+
+        input[type="text"], textarea {
+            width: 100%;
+            background: #0f172a;
+            border: 1px solid #334155;
+            color: #f8fafc;
+            padding: 10px;
+            border-radius: 8px;
+            outline: none;
+            font-size: 14px;
+        }
+
+        input[type="text"]:focus, textarea:focus {
+            border-color: #38bdf8;
+        }
+
+        textarea {
+            height: 100px; 
+            resize: vertical;
+        }
+
+        .btn {
+            background: #0ea5e9;
+            color: white;
+            border: none;
+            padding: 10px 4px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: bold;
+            transition: all 0.2s;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 4px;
+            white-space: nowrap;
+        }
+
+        .btn:hover { background: #0284c7; }
+        .btn-success { background: #22c55e; }
+        .btn-success:hover { background: #16a34a; }
+        .btn-danger { background: #ef4444; }
+        .btn-danger:hover { background: #dc2626; }
+        .btn-warning { background: #f59e0b; color: black; }
+        .btn-warning:hover { background: #d97706; color: white;}
+        .btn-secondary { background: #6366f1; color: white; }
+        .btn-secondary:hover { background: #4f46e5; }
+        .btn-dark { background: #475569; }
+        .btn-dark:hover { background: #334155; }
+
+        .controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #334155;
+        }
+
+        .btn-full {
+            grid-column: span 2;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .active-call-banner {
+            background: #0284c7;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            margin: 15px 0;
+            box-shadow: 0 4px 15px rgba(2, 132, 199, 0.4);
+        }
+
+        .active-call-banner h2 {
+            font-size: 26px;
+            letter-spacing: 1px;
+            margin: 8px 0;
+        }
+
+        .active-call-banner .hint {
+            font-size: 12px;
+            opacity: 0.85;
+            line-height: 1.4;
+        }
+
+        /* Outcomes Grid (Copy to Clipboard) */
+        .outcomes-section {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px dashed #334155;
+        }
+
+        .outcomes-section label {
+            text-align: center;
+            font-size: 0.85rem;
+            margin-bottom: 8px;
+        }
+
+        .outcomes-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+        }
+
+        .btn-outcome {
+            background: #1e293b;
+            color: #cbd5e1;
+            border: 1px solid #334155;
+            padding: 8px 4px;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-outcome:hover {
+            background: #334155;
+            color: #fff;
+        }
+
+        .numbers-list {
+            margin-top: 15px;
+            background: #0f172a;
+            border-radius: 8px;
+            max-height: 350px;
+            overflow-y: auto;
+            border: 1px solid #334155;
+        }
+
+        .number-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 12px;
+            border-bottom: 1px solid #1e293b;
+            font-size: 15px;
+        }
+
+        .number-item:last-child { border-bottom: none; }
+        
+        .number-item.active {
+            background: #0369a1;
+            color: white;
+            font-weight: bold;
+        }
+
+        .number-item.done {
+            opacity: 0.5;
+            text-decoration: line-through;
+        }
+
+        .status-badge {
+            font-size: 12px;
+            padding: 3px 6px;
+            border-radius: 4px;
+            background: #334155;
+            white-space: nowrap;
+            margin-left: 10px;
+        }
+
+        .stats {
+            display: flex;
+            justify-content: space-between;
+            color: #94a3b8;
+            font-size: 13px;
+            margin-top: 10px;
+        }
+
+        /* Color Extractor */
+        .color-extractor {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px dashed #334155;
+            text-align: center;
+        }
+
+        #pasteArea[contenteditable]:empty:before {
+            content: attr(placeholder);
+            color: #64748b;
+        }
+
+        #pasteArea:focus {
+            border-color: #38bdf8;
+            outline: none;
+        }
+
+        /* Toast Notification */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #22c55e;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: bold;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+            z-index: 1000;
+        }
+
+        .toast.show {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>📞 Auto Dialer</h1>
+
+        <div class="input-group">
+            <label>Property Address (Optional)</label>
+            <input type="text" id="addressInput" placeholder="Enter address here...">
+        </div>
+
+        <div class="input-group">
+            <label>Numbers or Text</label>
+            <textarea id="rawText" placeholder="Paste list of numbers or text containing numbers here..."></textarea>
+            <button class="btn btn-full" style="margin-top: 8px;" onclick="extractNumbers()">⬇️ Extract Numbers</button>
+        </div>
+
+        <div class="active-call-banner hidden" id="activeBanner">
+            <div>Dialing:</div>
+            <h2 id="currentNumberDisplay">---</h2>
+            <div class="hint">Use buttons, arrows (Left/Right), or Spacebar to navigate</div>
+        </div>
+
+        <div class="controls">
+            <button class="btn btn-success btn-full" id="btnStart" onclick="startDialing()">▶ Start Dialing</button>
+            <button class="btn btn-secondary hidden" id="btnPrev" onclick="prevNumber()">⏮ Prev</button>
+            <button class="btn btn-warning hidden" id="btnNext" onclick="nextNumber()">⏭ Next</button>
+            <button class="btn btn-danger btn-full hidden" id="btnStop" onclick="stopDialing()">⏹ Stop</button>
+            <button class="btn btn-dark btn-full" id="btnClear" onclick="clearAll()">🗑 Clear All</button>
+        </div>
+
+        <!-- Quick Outcomes for Evernote -->
+        <div class="outcomes-section hidden" id="outcomesSection">
+            <label>📋 Copy Outcome (Rich Text)</label>
+            <div class="outcomes-grid">
+                <button class="btn-outcome" onclick="copyOutcome('Not the owner')">Not the owner</button>
+                <button class="btn-outcome" onclick="copyOutcome('NIS')">NIS</button>
+                <button class="btn-outcome" onclick="copyOutcome('wrong num')">wrong num</button>
+                <button class="btn-outcome" onclick="copyOutcome('Business')">Business</button>
+                <button class="btn-outcome" onclick="copyOutcome('no response')">no response</button>
+                <button class="btn-outcome" onclick="copyOutcome('no good')">no good</button>
+                <button class="btn-outcome" onclick="copyOutcome('vm confirms it\'s him')">vm confirms it's him</button>
+                <button class="btn-outcome" onclick="copyOutcome('vm confirms it\'s her')">vm confirms it's her</button>
+                <button class="btn-outcome" onclick="copyOutcome('repeated')">repeated</button>
+                <button class="btn-outcome" onclick="copyOutcome('no work')">no work</button>
+                <button class="btn-outcome" onclick="copyOutcome('Spanish Speaker')">Spanish Speaker</button>
+                <button class="btn-outcome" onclick="copyOutcome('Not Associated')">Not Associated</button>
+                <button class="btn-outcome" onclick="copyOutcome('AI Google')">AI Google</button>
+                <button class="btn-outcome" onclick="copyOutcome('Chinese Speaker')">Chinese Speaker</button>
+            </div>
+        </div>
+
+        <div class="stats hidden" id="statsDisplay">
+            <span id="totalStats">Total: 0</span>
+            <span id="currentStats">Called: 0</span>
+        </div>
+
+        <!-- Color Detector -->
+        <div class="color-extractor" id="colorExtractor">
+            <label>🎨 Evernote Color Detector</label>
+            <div style="font-size: 11px; opacity: 0.8; margin-bottom: 8px;">Paste colored text from Evernote below:</div>
+            <div id="pasteArea" contenteditable="true" onpaste="detectColor(event)" placeholder="Paste here (Ctrl+V)..." style="width: 100%; min-height: 40px; border: 1px dashed #64748b; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #f8fafc; font-size: 13px; margin-bottom: 8px; background: #0f172a; padding: 5px;"></div>
+            <div id="colorResult" style="display: none; justify-content: center; align-items: center; gap: 8px; font-size: 13px;">
+                Detected: <div id="colorBox" style="width: 18px; height: 18px; border-radius: 4px; border: 1px solid #fff; background-color: rgb(251, 95, 44);"></div>
+                <span id="colorHex" style="font-family: monospace; font-weight: bold; color: #38bdf8;">rgb(251, 95, 44)</span>
+            </div>
+        </div>
+
+        <div class="numbers-list" id="numbersList">
+            <!-- Numbers will appear here -->
+        </div>
+
+        <div id="toast" class="toast">Copied!</div>
+    </div>
+
+    <script>
+        let numbersQueue = [];
+        let currentIndex = -1;
+        let isDialing = false;
+
+        // Evernote Default Orange Color - Specifically adapted for dark mode compat
+        let EVERNOTE_COLOR = "rgb(251, 95, 44)"; 
+
+        // Detect Color from Pasted HTML
+        function detectColor(e) {
+            e.preventDefault();
+            const html = e.clipboardData.getData('text/html');
+            const plainText = e.clipboardData.getData('text/plain');
+            
+            if (!html) {
+                alert("Please copy the colored text directly from Evernote to detect its color.");
+                return;
+            }
+
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = html;
+            
+            let detectedColor = null;
+            
+            // Search all elements for inline color style
+            const elements = tempDiv.getElementsByTagName('*');
+            for (let i = 0; i < elements.length; i++) {
+                if (elements[i].style && elements[i].style.color && elements[i].style.color !== 'inherit') {
+                    detectedColor = elements[i].style.color;
+                    break;
+                }
+            }
+
+            // Fallback for older HTML font tags
+            if (!detectedColor) {
+                const fontTags = tempDiv.getElementsByTagName('font');
+                if (fontTags.length > 0 && fontTags[0].color) {
+                    detectedColor = fontTags[0].color;
+                }
+            }
+
+            const pasteArea = document.getElementById('pasteArea');
+
+            if (detectedColor) {
+                document.getElementById('colorResult').style.display = 'flex';
+                document.getElementById('colorBox').style.backgroundColor = detectedColor;
+                document.getElementById('colorHex').textContent = detectedColor;
+                
+                EVERNOTE_COLOR = detectedColor; // Update global color for copy buttons!
+                
+                pasteArea.innerHTML = `<span style="color: ${detectedColor}; font-weight: bold;">✔ Color applied!</span>`;
+                showToast("Color updated & applied to buttons!");
+            } else {
+                pasteArea.innerHTML = plainText;
+                alert("Could not detect a specific color. Try copying a single word with color.");
+            }
+        }
+
+        // Copy Outcome to Clipboard with HTML Formatting
+        function copyOutcome(text) {
+            // Using the precise structure provided to ensure Dark Mode compatibility in Evernote
+            const htmlContent = `<span style="color:${EVERNOTE_COLOR};--inversion-type-color:simple;">${text}</span>`;
+            const plainText = `${text}`;
+
+            if (navigator.clipboard && window.ClipboardItem) {
+                const item = new ClipboardItem({
+                    'text/html': new Blob([htmlContent], { type: 'text/html' }),
+                    'text/plain': new Blob([plainText], { type: 'text/plain' })
+                });
+
+                navigator.clipboard.write([item]).then(() => {
+                    showToast(`Copied: ${text}`);
+                }).catch(err => {
+                    console.error("Failed to copy rich text", err);
+                    navigator.clipboard.writeText(plainText).then(() => showToast("Copied plain text"));
+                });
+            } else {
+                navigator.clipboard.writeText(plainText).then(() => showToast("Copied plain text"));
+            }
+        }
+
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 1500);
+        }
+
+        // Format number as (###) ###-####
+        function formatPhoneNumber(num) {
+            const cleaned = ('' + num).replace(/\D/g, '');
+            let match = cleaned.match(/^(\d{3})(\d{3})(\d{4})$/);
+            if (match) {
+                return '(' + match[1] + ') ' + match[2] + '-' + match[3];
+            }
+            if (cleaned.length > 10) {
+                 const last10 = cleaned.slice(-10);
+                 match = last10.match(/^(\d{3})(\d{3})(\d{4})$/);
+                 if (match) return '(' + match[1] + ') ' + match[2] + '-' + match[3];
+            }
+            return num;
+        }
+
+        // Extract numbers from raw text
+const extractNumbers = () => {
+    const rawInputElement = document.getElementById('rawText');
+    const text = rawInputElement.value.trim();
+    
+    if (!text) {
+        alert("Please paste text containing numbers first.");
+        return;
+    }
+
+    // إزالة الحروف غير المرئية التي تعطل محرك V8 Regex
+    const sanitizedText = text.replace(/[\u200B-\u200D\uFEFF]/g, '');
+    
+    // النمط الدقيق لالتقاط الأرقام بالتنسيق الأمريكي وتجاهل الأرقام العشوائية القصيرة
+    const phonePattern = /(?:\+?1[-.\s]?)?\(?[0-9]{3}\)?[-.\s]?[0-9]{3}[-.\s]?[0-9]{4}/g;
+    const matches = sanitizedText.match(phonePattern) || [];
+    
+    // محرك احتياطي: التقاط أي كتلة متصلة من 10 أرقام أو أكثر بعد إزالة المسافات
+    const noSpaceText = sanitizedText.replace(/\s+/g, '');
+    const contiguousDigits = noSpaceText.match(/[0-9]{10,}/g) || [];
+    matches.push(...contiguousDigits);
+
+    const uniqueTracker = new Set();
+    
+    // تنقية وتوحيد البيانات في طبقة التخزين مباشرة
+    numbersQueue = matches
+        .map(num => num.replace(/[^\d]/g, ''))
+        .map(num => num.length > 10 ? num.slice(-10) : num) // اقتطاع فوري لآخر 10 أرقام (يتجاهل العناوين)
+        .filter(num => num.length === 10)
+        .filter(num => {
+            if (uniqueTracker.has(num)) return false;
+            uniqueTracker.add(num);
+            return true;
+        });
+
+    if (numbersQueue.length === 0) {
+        alert("No valid 10-digit numbers found.");
+        return;
+    }
+
+    rawInputElement.value = '';
+    currentIndex = -1;
+    renderList();
+};
+        // Render the list of numbers
+        function renderList() {
+            const listDiv = document.getElementById('numbersList');
+            listDiv.innerHTML = '';
+
+            numbersQueue.forEach((num, index) => {
+                let statusClass = '';
+                let statusText = 'Waiting';
+
+                if (index < currentIndex) {
+                    statusClass = 'done';
+                    statusText = 'Done';
+                } else if (index === currentIndex && isDialing) {
+                    statusClass = 'active';
+                    statusText = 'Calling...';
+                }
+
+                const item = document.createElement('div');
+                item.className = `number-item ${statusClass}`;
+                item.id = `num-${index}`;
+                
+                item.innerHTML = `
+                    <span>${formatPhoneNumber(num)}</span>
+                    <span class="status-badge">${statusText}</span>
+                `;
+                listDiv.appendChild(item);
+            });
+
+            const statsDisplay = document.getElementById('statsDisplay');
+            if(numbersQueue.length > 0) {
+                statsDisplay.classList.remove('hidden');
+                document.getElementById('totalStats').textContent = `Total: ${numbersQueue.length}`;
+                document.getElementById('currentStats').textContent = `Called: ${Math.max(0, currentIndex)}`;
+            } else {
+                statsDisplay.classList.add('hidden');
+            }
+        }
+
+        // Start Dialing
+        function startDialing() {
+            if (numbersQueue.length === 0) {
+                alert("Queue is empty. Extract numbers first.");
+                return;
+            }
+
+            isDialing = true;
+            document.getElementById('btnStart').classList.add('hidden');
+            document.getElementById('btnPrev').classList.remove('hidden');
+            document.getElementById('btnNext').classList.remove('hidden');
+            document.getElementById('btnStop').classList.remove('hidden');
+            document.getElementById('activeBanner').classList.remove('hidden');
+            
+            // Show Outcomes section when dialing starts
+            document.getElementById('outcomesSection').classList.remove('hidden');
+
+            if (currentIndex === -1 || currentIndex >= numbersQueue.length) {
+                currentIndex = 0;
+            }
+            
+            callCurrentNumber();
+        }
+
+        // Call the current number
+        function callCurrentNumber() {
+            if (currentIndex >= numbersQueue.length) {
+                stopDialing();
+                alert("Finished calling all numbers!");
+                return;
+            }
+
+            const currentNumber = numbersQueue[currentIndex];
+            document.getElementById('currentNumberDisplay').textContent = formatPhoneNumber(currentNumber);
+            renderList();
+
+            const activeElement = document.getElementById(`num-${currentIndex}`);
+            if (activeElement) {
+                activeElement.scrollIntoView({ behavior: "smooth", block: "center" });
+            }
+
+            window.location.href = 'tel:' + currentNumber;
+        }
+
+        // Previous number
+        function prevNumber() {
+            if (!isDialing) return;
+            if (currentIndex > 0) {
+                currentIndex--;
+                callCurrentNumber();
+            } else {
+                alert("This is the first number in the list.");
+            }
+        }
+
+        // Next number
+        function nextNumber() {
+            if (!isDialing) return;
+            currentIndex++;
+            callCurrentNumber();
+        }
+
+        // Stop dialing
+        function stopDialing() {
+            isDialing = false;
+            document.getElementById('btnStart').classList.remove('hidden');
+            document.getElementById('btnPrev').classList.add('hidden');
+            document.getElementById('btnNext').classList.add('hidden');
+            document.getElementById('btnStop').classList.add('hidden');
+            document.getElementById('activeBanner').classList.add('hidden');
+            
+            // Hide Outcomes section when stopped
+            document.getElementById('outcomesSection').classList.add('hidden');
+            
+            if (currentIndex < numbersQueue.length && currentIndex >= 0) {
+                document.getElementById('btnStart').innerHTML = '▶ Resume Dialing';
+            }
+            renderList();
+        }
+
+        // Clear all data
+        function clearAll() {
+            if(confirm("Are you sure you want to clear all data?")) {
+                stopDialing();
+                numbersQueue = [];
+                currentIndex = -1;
+                document.getElementById('addressInput').value = '';
+                document.getElementById('rawText').value = '';
+                document.getElementById('btnStart').innerHTML = '▶ Start Dialing';
+                document.getElementById('outcomesSection').classList.add('hidden');
+                renderList();
+            }
+        }
+
+        // Keyboard Shortcuts
+        document.addEventListener('keydown', function(e) {
+            const activeTag = document.activeElement.tagName;
+            if (activeTag === 'INPUT' || activeTag === 'TEXTAREA') return;
+
+            if (isDialing) {
+                if (e.code === 'Space' || e.code === 'ArrowRight' || e.code === 'ArrowDown') {
+                    e.preventDefault(); 
+                    nextNumber();
+                } else if (e.code === 'ArrowLeft' || e.code === 'ArrowUp') {
+                    e.preventDefault();
+                    prevNumber();
+                }
+            }
+        });
+
+    </script>
+</body>
+</html>
