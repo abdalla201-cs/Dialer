@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dialer -> Evernote Auto-Log
 // @namespace    abdalla-dialer-tools
-// @version      1.6
+// @version      1.7
 // @description  Auto-writes call outcomes and shows a visual position marker in the open Evernote note
 // @match        https://abdalla201-cs.github.io/Dialer/*
 // @match        https://*.evernote.com/*
@@ -117,23 +117,7 @@
         const editable = findEditableRoot();
         if (editable && editable.focus) editable.focus();
 
-        // Move the editor's OWN caret to the end of the target line by
-        // simulating a click there. Evernote pastes at its internal caret
-        // (the last place you clicked), not at a caret we set via the DOM
-        // selection API, so we must move the real caret first.
-        const lineRect = line.el.getBoundingClientRect();
-        const numRect = getNumberRect(number) || lineRect;
-        const clickX = lineRect.right - 3;
-        const clickY = numRect.top + numRect.height / 2;
-        const view = doc.defaultView;
-        const clickTarget = doc.elementFromPoint(clickX, clickY) || line.el;
-        ['mousedown', 'mouseup', 'click'].forEach((type) => {
-            clickTarget.dispatchEvent(new MouseEvent(type, {
-                bubbles: true, cancelable: true, view, button: 0, clientX: clickX, clientY: clickY
-            }));
-        });
-
-        // Also set a DOM range at the line end (used by the fallback path).
+        // Put the DOM caret at the end of the target line.
         const range = doc.createRange();
         range.selectNodeContents(line.el);
         range.collapse(false);
@@ -141,36 +125,42 @@
         sel.removeAllRanges();
         sel.addRange(range);
 
-        // Simulate a real paste of the colored HTML. This is the same path
-        // Evernote uses when you copy from the dialer and paste manually, so
-        // it keeps the color (unlike execCommand, which Evernote strips).
-        let pasted = false;
-        try {
-            const dt = new DataTransfer();
-            dt.setData('text/html', html);
-            dt.setData('text/plain', text);
-            const evt = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt });
-            // dispatchEvent returns false if the editor called preventDefault,
-            // i.e. it handled the paste itself.
-            pasted = editable.dispatchEvent(evt) === false;
-        } catch (e) { /* ClipboardEvent may be unsupported */ }
+        // Evernote's editor syncs its internal caret from the DOM selection
+        // asynchronously (on selectionchange). Pasting immediately lands at
+        // the OLD caret (wherever the user last clicked). Wait a beat so the
+        // editor picks up the new selection, re-assert it, then paste.
+        setTimeout(() => {
+            sel.removeAllRanges();
+            sel.addRange(range);
 
-        if (!pasted) {
-            // Fallback: insert plain text then color it via the editor command.
-            doc.execCommand('insertText', false, text);
-            const fNode = sel.focusNode;
-            const fOff = sel.focusOffset;
-            if (fNode && fNode.nodeType === 3 && fOff >= text.length) {
-                const colorRange = doc.createRange();
-                colorRange.setStart(fNode, fOff - text.length);
-                colorRange.setEnd(fNode, fOff);
-                sel.removeAllRanges();
-                sel.addRange(colorRange);
-                try { doc.execCommand('styleWithCSS', false, true); } catch (e) {}
-                doc.execCommand('foreColor', false, chosen);
-                sel.collapseToEnd();
+            let pasted = false;
+            try {
+                const dt = new DataTransfer();
+                dt.setData('text/html', html);
+                dt.setData('text/plain', text);
+                const evt = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt });
+                // dispatchEvent returns false if the editor called
+                // preventDefault, i.e. it handled the paste itself.
+                pasted = editable.dispatchEvent(evt) === false;
+            } catch (e) { /* ClipboardEvent may be unsupported */ }
+
+            if (!pasted) {
+                // Fallback: insert plain text then color it via the editor command.
+                doc.execCommand('insertText', false, text);
+                const fNode = sel.focusNode;
+                const fOff = sel.focusOffset;
+                if (fNode && fNode.nodeType === 3 && fOff >= text.length) {
+                    const colorRange = doc.createRange();
+                    colorRange.setStart(fNode, fOff - text.length);
+                    colorRange.setEnd(fNode, fOff);
+                    sel.removeAllRanges();
+                    sel.addRange(colorRange);
+                    try { doc.execCommand('styleWithCSS', false, true); } catch (e) {}
+                    doc.execCommand('foreColor', false, chosen);
+                    sel.collapseToEnd();
+                }
             }
-        }
+        }, 150);
     }
 
     // Floating overlay marker — never inserted into the note, so it is not
