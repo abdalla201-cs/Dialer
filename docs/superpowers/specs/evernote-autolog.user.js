@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dialer -> Evernote Auto-Log
 // @namespace    abdalla-dialer-tools
-// @version      1.2
+// @version      1.3
 // @description  Auto-writes call outcomes and shows a visual position marker in the open Evernote note
 // @match        https://abdalla201-cs.github.io/Dialer/*
 // @match        https://*.evernote.com/*
@@ -21,9 +21,8 @@
     if (location.hostname === 'abdalla201-cs.github.io') {
         initDialerSide();
     } else if (location.hostname.endsWith('evernote.com')) {
-        // Only run in the top frame. Evernote loads several same-origin
-        // iframes; without this guard the listener fires once per frame and
-        // the outcome text gets written multiple times.
+        // Only the top frame runs — Evernote loads several same-origin
+        // iframes; otherwise the listener fires once per frame (double write).
         if (window.self === window.top) initEvernoteSide();
     }
 
@@ -41,7 +40,6 @@
                 }, true);
             });
 
-            // Current number changes (Start / Next / Prev update this text).
             const display = document.getElementById('currentNumberDisplay');
             let lastNumber = '';
             new MutationObserver(() => {
@@ -52,8 +50,6 @@
                 }
             }).observe(display, { childList: true, characterData: true, subtree: true });
 
-            // Stop detection: the active-call banner gets the "hidden" class
-            // when dialing stops. Emit a stop event so Evernote clears marker.
             const banner = document.getElementById('activeBanner');
             if (banner) {
                 new MutationObserver(() => {
@@ -103,7 +99,6 @@
             }
         });
 
-        // Keep the floating marker aligned when the note scrolls or resizes.
         window.addEventListener('scroll', repositionMarker, true);
         window.addEventListener('resize', repositionMarker, true);
     }
@@ -116,17 +111,37 @@
         }
         const hasComment = stripMarker(line.el.textContent).trim() !== number;
         const prefix = hasComment ? ' - ' : ' ';
-        const span = document.createElement('span');
-        span.setAttribute('style', `color:${color || DEFAULT_COLOR};--inversion-type-color:simple;`);
-        span.textContent = prefix + outcome;
-        line.el.appendChild(span);
-        notifyEdited(line.el);
+        const chosen = color || DEFAULT_COLOR;
+        const html = `<span style="color:${chosen};--inversion-type-color:simple;">${escapeHtml(prefix + outcome)}</span>`;
+
+        // Insert through the editor's own pipeline (execCommand insertHTML)
+        // so Evernote keeps the inline color. Appending a raw node makes
+        // Evernote re-parse and drop the color.
+        const doc = line.el.ownerDocument;
+        const editable = findEditableRoot();
+        if (editable && editable.focus) editable.focus();
+        const range = doc.createRange();
+        range.selectNodeContents(line.el);
+        range.collapse(false); // caret at end of the line
+        const sel = doc.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+
+        const ok = doc.execCommand('insertHTML', false, html);
+        if (!ok) {
+            // Fallback: append a styled span directly.
+            const span = doc.createElement('span');
+            span.setAttribute('style', `color:${chosen};--inversion-type-color:simple;`);
+            span.textContent = prefix + outcome;
+            line.el.appendChild(span);
+            notifyEdited(line.el);
+        }
     }
 
-    // The marker is a floating overlay element (NOT inserted into the note),
-    // so it never becomes part of the saved note text.
+    // Floating overlay marker — never inserted into the note, so it is not
+    // saved as text. Lives in the same document as the editor (iframe-safe).
     function handlePosition(number) {
-        cleanupTextMarkers(); // remove any leftover 🟡 saved by older versions
+        cleanupTextMarkers();
         currentMarkerNumber = number;
         const rect = getNumberRect(number);
         if (!rect) {
@@ -138,11 +153,15 @@
     }
 
     function ensureMarkerEl() {
-        if (markerEl) return markerEl;
-        markerEl = document.createElement('div');
+        const editable = findEditableRoot();
+        const doc = editable ? editable.ownerDocument : document;
+        // Recreate if missing or if it lives in the wrong document.
+        if (markerEl && markerEl.ownerDocument === doc) return markerEl;
+        if (markerEl && markerEl.parentNode) markerEl.parentNode.removeChild(markerEl);
+        markerEl = doc.createElement('div');
         markerEl.textContent = MARKER;
-        markerEl.style.cssText = 'position:fixed;z-index:2147483647;pointer-events:none;font-size:16px;line-height:1;transition:top 0.1s;';
-        document.body.appendChild(markerEl);
+        markerEl.style.cssText = 'position:fixed;z-index:2147483647;pointer-events:none;font-size:16px;line-height:1;';
+        doc.body.appendChild(markerEl);
         return markerEl;
     }
 
@@ -164,18 +183,17 @@
         if (rect) showMarkerAt(rect);
     }
 
-    // Precise on-screen rectangle of the phone-number text itself.
     function getNumberRect(number) {
         const line = findLineWithNumber(number);
         if (!line) return null;
-        const range = document.createRange();
+        const doc = line.el.ownerDocument;
+        const range = doc.createRange();
         range.selectNode(line.textNode);
         const rect = range.getBoundingClientRect();
         return rect && rect.width ? rect : line.el.getBoundingClientRect();
     }
 
-    // Remove any 🟡 characters previously saved into note text by older
-    // versions of this script (marker is now overlay-only).
+    // Remove any 🟡 saved into note text by older script versions.
     function cleanupTextMarkers() {
         const root = findEditableRoot();
         if (!root) return;
@@ -219,6 +237,10 @@
             }
         }
         return null;
+    }
+
+    function escapeHtml(text) {
+        return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
     function notifyEdited(el) {
