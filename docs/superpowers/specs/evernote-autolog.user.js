@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dialer -> Evernote Auto-Log
 // @namespace    abdalla-dialer-tools
-// @version      1.5
+// @version      1.6
 // @description  Auto-writes call outcomes and shows a visual position marker in the open Evernote note
 // @match        https://abdalla201-cs.github.io/Dialer/*
 // @match        https://*.evernote.com/*
@@ -117,7 +117,23 @@
         const editable = findEditableRoot();
         if (editable && editable.focus) editable.focus();
 
-        // Caret at end of the line.
+        // Move the editor's OWN caret to the end of the target line by
+        // simulating a click there. Evernote pastes at its internal caret
+        // (the last place you clicked), not at a caret we set via the DOM
+        // selection API, so we must move the real caret first.
+        const lineRect = line.el.getBoundingClientRect();
+        const numRect = getNumberRect(number) || lineRect;
+        const clickX = lineRect.right - 3;
+        const clickY = numRect.top + numRect.height / 2;
+        const view = doc.defaultView;
+        const clickTarget = doc.elementFromPoint(clickX, clickY) || line.el;
+        ['mousedown', 'mouseup', 'click'].forEach((type) => {
+            clickTarget.dispatchEvent(new MouseEvent(type, {
+                bubbles: true, cancelable: true, view, button: 0, clientX: clickX, clientY: clickY
+            }));
+        });
+
+        // Also set a DOM range at the line end (used by the fallback path).
         const range = doc.createRange();
         range.selectNodeContents(line.el);
         range.collapse(false);
