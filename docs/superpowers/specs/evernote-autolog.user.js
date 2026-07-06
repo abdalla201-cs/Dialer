@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dialer -> Evernote Auto-Log
 // @namespace    abdalla-dialer-tools
-// @version      1.0
+// @version      1.1
 // @description  Auto-writes call outcomes and a position marker into the open Evernote note
 // @match        https://abdalla201-cs.github.io/Dialer/*
 // @match        https://*.evernote.com/*
@@ -25,26 +25,39 @@
 
     // ---------- Dialer side ----------
 
+    // Runs inside Tampermonkey's isolated sandbox, so we cannot wrap the
+    // page's own functions (assigning window.copyOutcome only touches the
+    // sandbox window, not the page's). Instead we observe the shared DOM:
+    // listen to outcome-button clicks and watch the current-number display.
     function initDialerSide() {
-        waitFor(() => typeof window.copyOutcome === 'function' && typeof window.callCurrentNumber === 'function', () => {
-            const originalCopyOutcome = window.copyOutcome;
-            window.copyOutcome = function (text) {
-                originalCopyOutcome(text);
-                const number = document.getElementById('currentNumberDisplay')?.textContent?.trim();
-                if (number && number !== '---') {
-                    emit({ type: 'outcome', number, outcome: text });
-                }
-            };
+        waitFor(() => document.getElementById('currentNumberDisplay'), () => {
+            // Outcome buttons: capture-phase click listener so we fire even
+            // though each button also has its own onclick handler.
+            document.querySelectorAll('.btn-outcome').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const number = getCurrentNumber();
+                    const outcome = btn.textContent.trim();
+                    if (number && outcome) emit({ type: 'outcome', number, outcome });
+                }, true);
+            });
 
-            const originalCallCurrentNumber = window.callCurrentNumber;
-            window.callCurrentNumber = function () {
-                originalCallCurrentNumber();
-                const number = document.getElementById('currentNumberDisplay')?.textContent?.trim();
-                if (number && number !== '---') {
+            // Current number changes (Start / Next / Prev all update this).
+            const display = document.getElementById('currentNumberDisplay');
+            let lastNumber = '';
+            const observer = new MutationObserver(() => {
+                const number = getCurrentNumber();
+                if (number && number !== lastNumber) {
+                    lastNumber = number;
                     emit({ type: 'position', number });
                 }
-            };
+            });
+            observer.observe(display, { childList: true, characterData: true, subtree: true });
         });
+    }
+
+    function getCurrentNumber() {
+        const number = document.getElementById('currentNumberDisplay')?.textContent?.trim();
+        return number && number !== '---' ? number : null;
     }
 
     function emit(event) {
