@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Dialer -> Evernote Auto-Log
 // @namespace    abdalla-dialer-tools
-// @version      1.1
-// @description  Auto-writes call outcomes and a position marker into the open Evernote note
+// @version      1.2
+// @description  Auto-writes call outcomes and shows a visual position marker in the open Evernote note
 // @match        https://abdalla201-cs.github.io/Dialer/*
 // @match        https://*.evernote.com/*
 // @grant        GM_setValue
@@ -16,42 +16,53 @@
 
     const EVENT_KEY = 'dialerEvent';
     const MARKER = '🟡';
+    const DEFAULT_COLOR = 'rgb(251, 95, 44)';
 
     if (location.hostname === 'abdalla201-cs.github.io') {
         initDialerSide();
     } else if (location.hostname.endsWith('evernote.com')) {
-        initEvernoteSide();
+        // Only run in the top frame. Evernote loads several same-origin
+        // iframes; without this guard the listener fires once per frame and
+        // the outcome text gets written multiple times.
+        if (window.self === window.top) initEvernoteSide();
     }
 
     // ---------- Dialer side ----------
 
-    // Runs inside Tampermonkey's isolated sandbox, so we cannot wrap the
-    // page's own functions (assigning window.copyOutcome only touches the
-    // sandbox window, not the page's). Instead we observe the shared DOM:
-    // listen to outcome-button clicks and watch the current-number display.
     function initDialerSide() {
         waitFor(() => document.getElementById('currentNumberDisplay'), () => {
-            // Outcome buttons: capture-phase click listener so we fire even
-            // though each button also has its own onclick handler.
             document.querySelectorAll('.btn-outcome').forEach((btn) => {
                 btn.addEventListener('click', () => {
                     const number = getCurrentNumber();
                     const outcome = btn.textContent.trim();
-                    if (number && outcome) emit({ type: 'outcome', number, outcome });
+                    if (number && outcome) {
+                        emit({ type: 'outcome', number, outcome, color: getDetectedColor() });
+                    }
                 }, true);
             });
 
-            // Current number changes (Start / Next / Prev all update this).
+            // Current number changes (Start / Next / Prev update this text).
             const display = document.getElementById('currentNumberDisplay');
             let lastNumber = '';
-            const observer = new MutationObserver(() => {
+            new MutationObserver(() => {
                 const number = getCurrentNumber();
                 if (number && number !== lastNumber) {
                     lastNumber = number;
                     emit({ type: 'position', number });
                 }
-            });
-            observer.observe(display, { childList: true, characterData: true, subtree: true });
+            }).observe(display, { childList: true, characterData: true, subtree: true });
+
+            // Stop detection: the active-call banner gets the "hidden" class
+            // when dialing stops. Emit a stop event so Evernote clears marker.
+            const banner = document.getElementById('activeBanner');
+            if (banner) {
+                new MutationObserver(() => {
+                    if (banner.classList.contains('hidden')) {
+                        lastNumber = '';
+                        emit({ type: 'stop' });
+                    }
+                }).observe(banner, { attributes: true, attributeFilter: ['class'] });
+            }
         });
     }
 
@@ -60,11 +71,19 @@
         return number && number !== '---' ? number : null;
     }
 
+    function getDetectedColor() {
+        const text = document.getElementById('colorHex')?.textContent?.trim();
+        return text || DEFAULT_COLOR;
+    }
+
     function emit(event) {
         GM_setValue(EVENT_KEY, JSON.stringify({ ...event, ts: Date.now() }));
     }
 
     // ---------- Evernote side ----------
+
+    let markerEl = null;
+    let currentMarkerNumber = null;
 
     function initEvernoteSide() {
         GM_addValueChangeListener(EVENT_KEY, (key, oldValue, newValue, remote) => {
@@ -76,54 +95,103 @@
                 return;
             }
             if (event.type === 'outcome') {
-                handleOutcome(event.number, event.outcome);
+                handleOutcome(event.number, event.outcome, event.color);
             } else if (event.type === 'position') {
                 handlePosition(event.number);
+            } else if (event.type === 'stop') {
+                hideMarker();
             }
         });
+
+        // Keep the floating marker aligned when the note scrolls or resizes.
+        window.addEventListener('scroll', repositionMarker, true);
+        window.addEventListener('resize', repositionMarker, true);
     }
 
-    function handleOutcome(number, outcome) {
+    function handleOutcome(number, outcome, color) {
         const line = findLineWithNumber(number);
         if (!line) {
             showToast(`Number not found in this note: ${number}`);
             return;
         }
-        const hasComment = line.el.textContent.trim() !== number;
-        const suffix = hasComment ? ` - ${outcome}` : ` ${outcome}`;
-        line.el.appendChild(document.createTextNode(suffix));
+        const hasComment = stripMarker(line.el.textContent).trim() !== number;
+        const prefix = hasComment ? ' - ' : ' ';
+        const span = document.createElement('span');
+        span.setAttribute('style', `color:${color || DEFAULT_COLOR};--inversion-type-color:simple;`);
+        span.textContent = prefix + outcome;
+        line.el.appendChild(span);
         notifyEdited(line.el);
     }
 
+    // The marker is a floating overlay element (NOT inserted into the note),
+    // so it never becomes part of the saved note text.
     function handlePosition(number) {
-        const root = findEditableRoot();
-        if (!root) {
-            showToast('Evernote editor not found');
-            return;
-        }
-        removeMarker(root);
-        const line = findLineWithNumber(number);
-        if (!line) {
+        cleanupTextMarkers(); // remove any leftover 🟡 saved by older versions
+        currentMarkerNumber = number;
+        const rect = getNumberRect(number);
+        if (!rect) {
             showToast(`Number not found in this note: ${number}`);
+            hideMarker();
             return;
         }
-        line.el.insertBefore(document.createTextNode(`${MARKER} `), line.el.firstChild);
-        notifyEdited(line.el);
+        showMarkerAt(rect);
     }
 
-    function removeMarker(root) {
+    function ensureMarkerEl() {
+        if (markerEl) return markerEl;
+        markerEl = document.createElement('div');
+        markerEl.textContent = MARKER;
+        markerEl.style.cssText = 'position:fixed;z-index:2147483647;pointer-events:none;font-size:16px;line-height:1;transition:top 0.1s;';
+        document.body.appendChild(markerEl);
+        return markerEl;
+    }
+
+    function showMarkerAt(rect) {
+        const el = ensureMarkerEl();
+        el.style.display = 'block';
+        el.style.left = (rect.left - 22) + 'px';
+        el.style.top = (rect.top + rect.height / 2 - 8) + 'px';
+    }
+
+    function hideMarker() {
+        currentMarkerNumber = null;
+        if (markerEl) markerEl.style.display = 'none';
+    }
+
+    function repositionMarker() {
+        if (!currentMarkerNumber || !markerEl || markerEl.style.display === 'none') return;
+        const rect = getNumberRect(currentMarkerNumber);
+        if (rect) showMarkerAt(rect);
+    }
+
+    // Precise on-screen rectangle of the phone-number text itself.
+    function getNumberRect(number) {
+        const line = findLineWithNumber(number);
+        if (!line) return null;
+        const range = document.createRange();
+        range.selectNode(line.textNode);
+        const rect = range.getBoundingClientRect();
+        return rect && rect.width ? rect : line.el.getBoundingClientRect();
+    }
+
+    // Remove any 🟡 characters previously saved into note text by older
+    // versions of this script (marker is now overlay-only).
+    function cleanupTextMarkers() {
+        const root = findEditableRoot();
+        if (!root) return;
         const walker = (root.ownerDocument || document).createTreeWalker(root, NodeFilter.SHOW_TEXT);
-        const toFix = [];
+        const hits = [];
         let node;
         while ((node = walker.nextNode())) {
-            if (node.nodeValue.includes(MARKER)) toFix.push(node);
+            if (node.nodeValue.includes(MARKER)) hits.push(node);
         }
-        toFix.forEach((n) => { n.nodeValue = n.nodeValue.replace(`${MARKER} `, '').replace(MARKER, ''); });
+        hits.forEach((n) => { n.nodeValue = stripMarker(n.nodeValue); });
     }
 
-    // Assumes each visual line in the Evernote editor is its own block
-    // element directly under the contenteditable root. Verify/adjust
-    // against the live DOM before relying on this.
+    function stripMarker(text) {
+        return text.split(`${MARKER} `).join('').split(MARKER).join('');
+    }
+
     function findLineWithNumber(number) {
         const root = findEditableRoot();
         if (!root) return null;
@@ -162,7 +230,7 @@
         if (!toast) {
             toast = document.createElement('div');
             toast.id = 'dialer-sync-toast';
-            toast.style.cssText = 'position:fixed;bottom:20px;right:20px;background:#ef4444;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;z-index:999999;font-family:sans-serif;';
+            toast.style.cssText = 'position:fixed;bottom:20px;right:20px;background:#ef4444;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;z-index:2147483647;font-family:sans-serif;';
             document.body.appendChild(toast);
         }
         toast.textContent = message;
