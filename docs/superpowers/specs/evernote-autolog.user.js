@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dialer -> Evernote Auto-Log
 // @namespace    abdalla-dialer-tools
-// @version      2.0
+// @version      2.1
 // @description  Auto-writes call outcomes and shows a visual position marker in the open Evernote note
 // @match        https://abdalla201-cs.github.io/Dialer/*
 // @match        https://*.evernote.com/*
@@ -31,12 +31,17 @@
     function initDialerSide() {
         waitFor(() => document.getElementById('currentNumberDisplay'), () => {
             document.querySelectorAll('.btn-outcome').forEach((btn) => {
-                // Single click = copy to clipboard only (the page's own
-                // handler also copies; ours guarantees the picked color).
+                // Single click = copy to clipboard only.
                 // Double click = auto-write into Evernote.
+                // The page's own onclick also writes the clipboard (with its
+                // possibly-stale color) — delay ours so it lands LAST and the
+                // clipboard ends up holding the picked color.
                 btn.addEventListener('click', () => {
                     const outcome = btn.textContent.trim();
-                    if (outcome) copyOutcomeToClipboard(outcome, getDetectedColor());
+                    if (outcome) {
+                        const color = getDetectedColor();
+                        setTimeout(() => copyOutcomeToClipboard(outcome, color), 250);
+                    }
                 }, true);
                 btn.addEventListener('dblclick', () => {
                     const number = getCurrentNumber();
