@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dialer -> Evernote Auto-Log
 // @namespace    abdalla-dialer-tools
-// @version      1.3
+// @version      1.4
 // @description  Auto-writes call outcomes and shows a visual position marker in the open Evernote note
 // @match        https://abdalla201-cs.github.io/Dialer/*
 // @match        https://*.evernote.com/*
@@ -110,31 +110,37 @@
             return;
         }
         const hasComment = stripMarker(line.el.textContent).trim() !== number;
-        const prefix = hasComment ? ' - ' : ' ';
+        const text = (hasComment ? ' - ' : ' ') + outcome;
         const chosen = color || DEFAULT_COLOR;
-        const html = `<span style="color:${chosen};--inversion-type-color:simple;">${escapeHtml(prefix + outcome)}</span>`;
-
-        // Insert through the editor's own pipeline (execCommand insertHTML)
-        // so Evernote keeps the inline color. Appending a raw node makes
-        // Evernote re-parse and drop the color.
         const doc = line.el.ownerDocument;
         const editable = findEditableRoot();
         if (editable && editable.focus) editable.focus();
+
+        // Caret at end of the line.
         const range = doc.createRange();
         range.selectNodeContents(line.el);
-        range.collapse(false); // caret at end of the line
+        range.collapse(false);
         const sel = doc.getSelection();
         sel.removeAllRanges();
         sel.addRange(range);
 
-        const ok = doc.execCommand('insertHTML', false, html);
-        if (!ok) {
-            // Fallback: append a styled span directly.
-            const span = doc.createElement('span');
-            span.setAttribute('style', `color:${chosen};--inversion-type-color:simple;`);
-            span.textContent = prefix + outcome;
-            line.el.appendChild(span);
-            notifyEdited(line.el);
+        // 1) Insert the outcome as plain text through the editor.
+        doc.execCommand('insertText', false, text);
+
+        // 2) Select exactly that text and apply the color with the editor's
+        //    own color command — Evernote strips raw inline-style spans, but
+        //    honors foreColor (the same path used when you color manually).
+        const fNode = sel.focusNode;
+        const fOff = sel.focusOffset;
+        if (fNode && fNode.nodeType === 3 && fOff >= text.length) {
+            const colorRange = doc.createRange();
+            colorRange.setStart(fNode, fOff - text.length);
+            colorRange.setEnd(fNode, fOff);
+            sel.removeAllRanges();
+            sel.addRange(colorRange);
+            try { doc.execCommand('styleWithCSS', false, true); } catch (e) {}
+            doc.execCommand('foreColor', false, chosen);
+            sel.collapseToEnd();
         }
     }
 
