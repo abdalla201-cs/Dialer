@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dialer -> Evernote Auto-Log
 // @namespace    abdalla-dialer-tools
-// @version      1.4
+// @version      1.5
 // @description  Auto-writes call outcomes and shows a visual position marker in the open Evernote note
 // @match        https://abdalla201-cs.github.io/Dialer/*
 // @match        https://*.evernote.com/*
@@ -112,6 +112,7 @@
         const hasComment = stripMarker(line.el.textContent).trim() !== number;
         const text = (hasComment ? ' - ' : ' ') + outcome;
         const chosen = color || DEFAULT_COLOR;
+        const html = `<span style="color:${chosen};--inversion-type-color:simple;">${escapeHtml(text)}</span>`;
         const doc = line.el.ownerDocument;
         const editable = findEditableRoot();
         if (editable && editable.focus) editable.focus();
@@ -124,23 +125,35 @@
         sel.removeAllRanges();
         sel.addRange(range);
 
-        // 1) Insert the outcome as plain text through the editor.
-        doc.execCommand('insertText', false, text);
+        // Simulate a real paste of the colored HTML. This is the same path
+        // Evernote uses when you copy from the dialer and paste manually, so
+        // it keeps the color (unlike execCommand, which Evernote strips).
+        let pasted = false;
+        try {
+            const dt = new DataTransfer();
+            dt.setData('text/html', html);
+            dt.setData('text/plain', text);
+            const evt = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt });
+            // dispatchEvent returns false if the editor called preventDefault,
+            // i.e. it handled the paste itself.
+            pasted = editable.dispatchEvent(evt) === false;
+        } catch (e) { /* ClipboardEvent may be unsupported */ }
 
-        // 2) Select exactly that text and apply the color with the editor's
-        //    own color command — Evernote strips raw inline-style spans, but
-        //    honors foreColor (the same path used when you color manually).
-        const fNode = sel.focusNode;
-        const fOff = sel.focusOffset;
-        if (fNode && fNode.nodeType === 3 && fOff >= text.length) {
-            const colorRange = doc.createRange();
-            colorRange.setStart(fNode, fOff - text.length);
-            colorRange.setEnd(fNode, fOff);
-            sel.removeAllRanges();
-            sel.addRange(colorRange);
-            try { doc.execCommand('styleWithCSS', false, true); } catch (e) {}
-            doc.execCommand('foreColor', false, chosen);
-            sel.collapseToEnd();
+        if (!pasted) {
+            // Fallback: insert plain text then color it via the editor command.
+            doc.execCommand('insertText', false, text);
+            const fNode = sel.focusNode;
+            const fOff = sel.focusOffset;
+            if (fNode && fNode.nodeType === 3 && fOff >= text.length) {
+                const colorRange = doc.createRange();
+                colorRange.setStart(fNode, fOff - text.length);
+                colorRange.setEnd(fNode, fOff);
+                sel.removeAllRanges();
+                sel.addRange(colorRange);
+                try { doc.execCommand('styleWithCSS', false, true); } catch (e) {}
+                doc.execCommand('foreColor', false, chosen);
+                sel.collapseToEnd();
+            }
         }
     }
 
