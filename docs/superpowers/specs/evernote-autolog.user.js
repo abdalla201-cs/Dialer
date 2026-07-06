@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dialer -> Evernote Auto-Log
 // @namespace    abdalla-dialer-tools
-// @version      1.8
+// @version      1.9
 // @description  Auto-writes call outcomes and shows a visual position marker in the open Evernote note
 // @match        https://abdalla201-cs.github.io/Dialer/*
 // @match        https://*.evernote.com/*
@@ -35,7 +35,9 @@
                     const number = getCurrentNumber();
                     const outcome = btn.textContent.trim();
                     if (number && outcome) {
-                        emit({ type: 'outcome', number, outcome, color: getDetectedColor() });
+                        const color = getDetectedColor();
+                        emit({ type: 'outcome', number, outcome, color });
+                        copyOutcomeToClipboard(outcome, color);
                     }
                 }, true);
             });
@@ -74,6 +76,23 @@
 
     function emit(event) {
         GM_setValue(EVENT_KEY, JSON.stringify({ ...event, ts: Date.now() }));
+    }
+
+    // Also keep the outcome in the clipboard (colored rich text), so it can
+    // be pasted manually anywhere even after the auto-write to Evernote.
+    function copyOutcomeToClipboard(outcome, color) {
+        const html = `<span style="color:${color};--inversion-type-color:simple;">${outcome}</span>`;
+        try {
+            const item = new ClipboardItem({
+                'text/html': new Blob([html], { type: 'text/html' }),
+                'text/plain': new Blob([outcome], { type: 'text/plain' })
+            });
+            navigator.clipboard.write([item]).catch(() => {
+                navigator.clipboard.writeText(outcome).catch(() => {});
+            });
+        } catch (e) {
+            navigator.clipboard.writeText(outcome).catch(() => {});
+        }
     }
 
     // ---------- Evernote side ----------
