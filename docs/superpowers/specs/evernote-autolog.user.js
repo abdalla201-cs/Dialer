@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dialer -> Evernote Auto-Log
 // @namespace    abdalla-dialer-tools
-// @version      1.7
+// @version      1.8
 // @description  Auto-writes call outcomes and shows a visual position marker in the open Evernote note
 // @match        https://abdalla201-cs.github.io/Dialer/*
 // @match        https://*.evernote.com/*
@@ -99,8 +99,6 @@
             }
         });
 
-        window.addEventListener('scroll', repositionMarker, true);
-        window.addEventListener('resize', repositionMarker, true);
     }
 
     function handleOutcome(number, outcome, color) {
@@ -175,6 +173,27 @@
             return;
         }
         showMarkerAt(rect);
+        startMarkerTracking();
+    }
+
+    // Continuously track the number's on-screen position (every frame).
+    // Evernote scrolls/re-renders its note in ways that fire no window
+    // scroll/resize events, so event-based repositioning goes stale.
+    let trackingActive = false;
+    function startMarkerTracking() {
+        if (trackingActive) return;
+        trackingActive = true;
+        const tick = () => {
+            if (!currentMarkerNumber) { trackingActive = false; return; }
+            const rect = getNumberRect(currentMarkerNumber);
+            if (rect && rect.width) {
+                showMarkerAt(rect);
+            } else if (markerEl) {
+                markerEl.style.display = 'none'; // number scrolled out / not found
+            }
+            requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
     }
 
     function ensureMarkerEl() {
@@ -200,12 +219,6 @@
     function hideMarker() {
         currentMarkerNumber = null;
         if (markerEl) markerEl.style.display = 'none';
-    }
-
-    function repositionMarker() {
-        if (!currentMarkerNumber || !markerEl || markerEl.style.display === 'none') return;
-        const rect = getNumberRect(currentMarkerNumber);
-        if (rect) showMarkerAt(rect);
     }
 
     function getNumberRect(number) {
