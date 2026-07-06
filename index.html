@@ -326,6 +326,11 @@
                 Detected: <div id="colorBox" style="width: 18px; height: 18px; border-radius: 4px; border: 1px solid #fff; background-color: rgb(251, 95, 44);"></div>
                 <span id="colorHex" style="font-family: monospace; font-weight: bold; color: #38bdf8;">rgb(251, 95, 44)</span>
             </div>
+            <div style="margin-top: 12px; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 12px; flex-wrap: wrap;">
+                <span style="opacity: 0.85;">Or pick a color:</span>
+                <input type="color" id="colorPicker" value="#fb5f2c" style="width: 40px; height: 30px; border: 1px solid var(--border-color, #334155); border-radius: 6px; background: none; cursor: pointer; padding: 0;">
+                <button class="btn-secondary" style="padding: 6px 14px;" onclick="saveManualColor()">💾 Save Color</button>
+            </div>
         </div>
 
         <div class="numbers-list" id="numbersList">
@@ -384,13 +389,56 @@
                 document.getElementById('colorHex').textContent = detectedColor;
                 
                 EVERNOTE_COLOR = detectedColor; // Update global color for copy buttons!
-                
+                localStorage.setItem('evernoteColor', detectedColor);
+                syncColorPicker(detectedColor);
+
                 pasteArea.innerHTML = `<span style="color: ${detectedColor}; font-weight: bold;">✔ Color applied!</span>`;
                 showToast("Color updated & applied to buttons!");
             } else {
                 pasteArea.innerHTML = plainText;
                 alert("Could not detect a specific color. Try copying a single word with color.");
             }
+        }
+
+        // Manual color picker: save the chosen color and expose it to the
+        // Tampermonkey script (which reads #colorHex).
+        function hexToRgb(hex) {
+            const parts = hex.replace('#', '').match(/.{2}/g);
+            if (!parts || parts.length < 3) return null;
+            const [r, g, b] = parts.map(h => parseInt(h, 16));
+            return `rgb(${r}, ${g}, ${b})`;
+        }
+
+        function rgbToHex(rgb) {
+            const m = rgb.match(/\d+/g);
+            if (!m || m.length < 3) return null;
+            return '#' + m.slice(0, 3).map(n => (+n).toString(16).padStart(2, '0')).join('');
+        }
+
+        function applyColor(rgb) {
+            EVERNOTE_COLOR = rgb;
+            localStorage.setItem('evernoteColor', rgb);
+            document.getElementById('colorResult').style.display = 'flex';
+            document.getElementById('colorBox').style.backgroundColor = rgb;
+            document.getElementById('colorHex').textContent = rgb;
+            syncColorPicker(rgb);
+        }
+
+        function syncColorPicker(rgb) {
+            const hex = rgbToHex(rgb);
+            if (hex) document.getElementById('colorPicker').value = hex;
+        }
+
+        function saveManualColor() {
+            const rgb = hexToRgb(document.getElementById('colorPicker').value);
+            if (!rgb) return;
+            applyColor(rgb);
+            showToast('Color saved: ' + rgb);
+        }
+
+        function loadSavedColor() {
+            const saved = localStorage.getItem('evernoteColor');
+            if (saved) applyColor(saved);
         }
 
         // Copy Outcome to Clipboard with HTML Formatting
@@ -631,6 +679,9 @@ const extractNumbers = () => {
                 }
             }
         });
+
+        // Restore the saved outcome color on load.
+        loadSavedColor();
 
     </script>
 </body>
